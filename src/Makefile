@@ -14,9 +14,12 @@ OBJS=$(SRCS:%.c=%.o)
 DEPENDS=$(SRCS:%.c=%.d)
 
 
-all:local
+all:local remote
 
-local:$(OBJS)
+local:local.o protocol.o thread_env.o util.o
+	$(CC) -o $@ $^ $(LDFLAGS)
+
+remote:remote.o protocol.o thread_env.o util.o
 	$(CC) -o $@ $^ $(LDFLAGS)
 
 $(OBJS):%.o:%.c
@@ -30,7 +33,7 @@ $(DEPENDS):%.d:%.c
 	rm $@.$$$$
 
 clean:
-	$(RM) $(OBJS) $(DEPENDS) local
+	$(RM) $(OBJS) $(DEPENDS) local remote
 
 fake:
 	@echo $(OBJS)

@@ -422,7 +422,7 @@ static void local_recv_cb(evutil_socket_t fd, short event, void *arg)
 {
     local_t *l = (local_t *)arg;
     tunnel_t *tun = l->tun;
-    client_t *c;
+    client_t *c = l->c;
     char buf[RECV_SIZE];
     int len;
     int n, r;
@@ -431,8 +431,6 @@ static void local_recv_cb(evutil_socket_t fd, short event, void *arg)
     assert(tun->connected && "local_recv_cb: tunnel is connected");
 
     set_logenv(l);
-
-    c = l->c;
 
     if (EV_TIMEOUT == event)
     {
