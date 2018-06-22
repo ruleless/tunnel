@@ -120,9 +120,6 @@ struct tunnel_s
     struct event ev_write;
 
     char encbuf[BUF_SIZE];
-    char *recvptr;
-
-    char buf[RECV_SIZE];
     char *sendptr;
     size_t len;
 };
@@ -141,6 +138,9 @@ struct remote_s
     BOOL connected;
 
     char encbuf[BUF_SIZE];
+    char *recvptr;
+
+    char buf[RECV_SIZE];
     char *sendptr;
     size_t len;
 };
@@ -240,7 +240,7 @@ static server_t *new_server(addr_info_t *addr)
     setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
 
     /* bind address */
-    s->addr.listen_inaddr.sin_family =  AF_INET;
+    s->addr.listen_inaddr.sin_family = AF_INET;
     s->addr.listen_inaddr.sin_port = htons(s->addr.listen_addr.port);
     if (*s->addr.listen_addr.hostname)
     {
@@ -318,7 +318,7 @@ static void resolv_cb(int err, struct evutil_addrinfo *ai, void *arg)
 
             event_add(&s->ev_accept, NULL);
 
-            LOG(DebugLog, "reolve %s -> %s, we can accept server now",
+            LOG(DebugLog, "reolve %s -> %s, we can accept tunnel now",
                 s->addr.peer_addr.hostname, buf);
 
             return;
@@ -423,9 +423,8 @@ static void tunnel_recv_cb(evutil_socket_t fd, short event, void *arg)
     tunnel_t *tun = (tunnel_t *)arg;
     remote_t *r = tun->r;
     server_t *s = tun->s;
-    char buf[RECV_SIZE];
-    int len;
-    int n;
+    int n, len;
+    int offset;
 
     assert(r && "tunnel_recv_cb: remote != NULL");
     assert(r->connected && "tunnel_recv_cb: remote is connected");
@@ -440,9 +439,12 @@ static void tunnel_recv_cb(evutil_socket_t fd, short event, void *arg)
         goto end;
     }
 
-    /* recv from server */
+    /* recv from tunnel */
 again_1:
-    n = recv(tun->fd, buf, sizeof(buf), 0);
+    assert((!r->sendptr || r->sendptr == r->buf) && "tunnel_recv_cb: has data to send to remote");
+    if (!r->recvptr)
+        r->recvptr = r->encbuf;
+    n = recv(tun->fd, r->recvptr, r->encbuf + sizeof(r->encbuf) - r->recvptr, 0);
     if (n < 0)
     {
         if (EINTR == errno)
@@ -451,7 +453,7 @@ again_1:
         }
         else if (errno != EWOULDBLOCK && errno != EAGAIN)
         {
-            LOG(WarnLog, "read from server failed, %s", strerror(errno));
+            LOG(InfoLog, "read from tunnel error, %s", strerror(errno));
             free_remote(r);
             free_tunnel(tun);
             goto end;
@@ -461,28 +463,38 @@ again_1:
     }
     if (n == 0)
     {
-        LOG(DebugLog, "connection with server closed");
+        LOG(DebugLog, "connection with tunnel closed");
         free_remote(r);
         free_tunnel(tun);
         goto end;
     }
 
-    /* encode the data */
-    assert((!r->sendptr || r->sendptr == r->encbuf) && "tunnel_recv_cb: has data to send");
-    n = s->encode_handler(buf, n, r->encbuf, sizeof(r->encbuf));
+    /* decode */
+    r->recvptr += n;
+    n = s->decode_handler(r->encbuf, r->recvptr - r->encbuf, r->buf, sizeof(r->buf), &offset);
     if (n <= 0)
     {
-        LOG(ErrLog, "encode error, reason:%s", proto_strerror(n));
+        if (Proto_Again == n)
+            goto end;
+
+        LOG(WarnLog, "decode data failed, reason:%s", proto_strerror(n));
         free_remote(r);
         free_tunnel(tun);
         goto end;
     }
-    r->len = n;
 
-    /* translate to server */
+    r->len = n;
+    assert(offset <= r->recvptr - r->encbuf && "offset <= r->recvptr - r->encbuf");
+    if (offset < r->recvptr - r->encbuf)
+    {
+        memmove(r->encbuf, r->encbuf + offset, r->recvptr - r->encbuf - offset);
+    }
+    r->recvptr -= offset;
+
+    /* translate data to remote */
 again_2:
     len = r->len;
-    n = send(r->fd, r->encbuf, len, 0);
+    n = send(r->fd, r->buf, len, 0);
     if (n < 0)
     {
         if (EINTR == errno)
@@ -495,11 +507,11 @@ again_2:
             event_del(&tun->ev_read);
             event_add(&r->ev_write, NULL);
 
-            r->sendptr = r->encbuf;
+            r->sendptr = r->buf;
             goto end;
         }
 
-        LOG(WarnLog, "tranlate to server error, %s", strerror(errno));
+        LOG(WarnLog, "translate data to remote failed, %s", strerror(errno));
         free_remote(r);
         free_tunnel(tun);
         goto end;
@@ -510,7 +522,7 @@ again_2:
         event_del(&tun->ev_read);
         event_add(&r->ev_write, NULL);
 
-        r->sendptr = r->encbuf + n;
+        r->sendptr = r->buf + n;
         goto end;
     }
 
@@ -532,7 +544,7 @@ static void tunnel_send_cb(evutil_socket_t fd, short event, void *arg)
     set_logenv(tun);
 
 again:
-    len = tun->buf + tun->len - tun->sendptr;
+    len = tun->encbuf + tun->len - tun->sendptr;
     n = send(tun->fd, tun->sendptr, len, 0);
     if (n < 0)
     {
@@ -545,7 +557,7 @@ again:
             goto end;
         }
 
-        LOG(WarnLog, "translate data to server error(in callback), reason:%s", strerror(errno));
+        LOG(WarnLog, "translate to tunnel failed(in callback), reason: %s", strerror(errno));
         free_remote(r);
         free_tunnel(tun);
         goto end;
@@ -657,25 +669,22 @@ static void remote_recv_cb(evutil_socket_t fd, short event, void *arg)
     remote_t *r = (remote_t *)arg;
     tunnel_t *tun = r->tun;
     server_t *s = tun->s;
+    char buf[RECV_SIZE];
     int n, len;
-    int offset = 0;
 
     set_logenv(tun);
 
     if (EV_TIMEOUT == event)
     {
-        LOG(DebugLog, "connection with server timeout");
+        LOG(DebugLog, "connection with remote timeout");
         free_remote(r);
         free_tunnel(tun);
         goto end;
     }
 
-    /* recv data from server */
+    /* recv data from remote */
 again_1:
-    assert((!tun->sendptr || tun->sendptr == tun->buf) && "remote_recv_cb: has data to send to server");
-    if (!tun->recvptr)
-        tun->recvptr = tun->encbuf;
-    n = recv(r->fd, tun->recvptr, tun->encbuf + sizeof(tun->encbuf) - tun->recvptr, 0);
+    n = recv(r->fd, buf, sizeof(buf), 0);
     if (n < 0)
     {
         if (EINTR == errno)
@@ -684,7 +693,7 @@ again_1:
         }
         else if (errno != EWOULDBLOCK && errno != EAGAIN)
         {
-            LOG(InfoLog, "read from server error, %s", strerror(errno));
+            LOG(WarnLog, "read from remote failed, %s", strerror(errno));
             free_remote(r);
             free_tunnel(tun);
             goto end;
@@ -694,38 +703,28 @@ again_1:
     }
     if (n == 0)
     {
-        LOG(DebugLog, "connection with server closed");
+        LOG(DebugLog, "connection with remote closed");
         free_remote(r);
         free_tunnel(tun);
         goto end;
     }
 
-    /* decode */
-    tun->recvptr += n;
-    n = s->decode_handler(tun->encbuf, tun->recvptr - tun->encbuf, tun->buf, sizeof(tun->buf), &offset);
+    /* encode the data */
+    assert((!tun->sendptr || tun->sendptr == tun->encbuf) && "remote_recv_cb: has data to send");
+    n = s->encode_handler(buf, n, tun->encbuf, sizeof(tun->encbuf));
     if (n <= 0)
     {
-        if (Proto_Again == n)
-            goto end;
-
-        LOG(WarnLog, "decode data failed, reason:%s", proto_strerror(n));
+        LOG(ErrLog, "encode error, reason:%s", proto_strerror(n));
         free_remote(r);
         free_tunnel(tun);
         goto end;
     }
-
     tun->len = n;
-    assert(offset <= tun->recvptr - tun->encbuf && "offset <= tun->recvptr - tun->encbuf");
-    if (offset < tun->recvptr - tun->encbuf)
-    {
-        memmove(tun->encbuf, tun->encbuf + offset, tun->recvptr - tun->encbuf - offset);
-    }
-    tun->recvptr -= offset;
 
-    /* translate data to server */
+    /* translate to tunnel */
 again_2:
     len = tun->len;
-    n = send(tun->fd, tun->buf, len, 0);
+    n = send(tun->fd, tun->encbuf, len, 0);
     if (n < 0)
     {
         if (EINTR == errno)
@@ -738,11 +737,11 @@ again_2:
             event_del(&r->ev_read);
             event_add(&tun->ev_write, NULL);
 
-            tun->sendptr = tun->buf;
+            tun->sendptr = tun->encbuf;
             goto end;
         }
 
-        LOG(WarnLog, "translate data to server failed, %s", strerror(errno));
+        LOG(WarnLog, "tranlate to tunnel error, %s", strerror(errno));
         free_remote(r);
         free_tunnel(tun);
         goto end;
@@ -753,7 +752,7 @@ again_2:
         event_del(&r->ev_read);
         event_add(&tun->ev_write, NULL);
 
-        tun->sendptr = tun->buf + n;
+        tun->sendptr = tun->encbuf + n;
         goto end;
     }
 
@@ -776,7 +775,7 @@ static void remote_send_cb(evutil_socket_t fd, short event, void *arg)
 
         assert(r->sendptr && "remote_send_cb: r->sendptr != NULL");
   again:
-        len = r->encbuf + r->len - r->sendptr;
+        len = r->buf + r->len - r->sendptr;
         n = send(r->fd, r->sendptr, len, 0);
         if (n < 0)
         {
@@ -789,7 +788,7 @@ static void remote_send_cb(evutil_socket_t fd, short event, void *arg)
                 goto end;
             }
 
-            LOG(WarnLog, "translate to server failed(in callback), reason: %s", strerror(errno));
+            LOG(WarnLog, "translate data to remote error(in callback), reason:%s", strerror(errno));
             free_remote(r);
             free_tunnel(tun);
             goto end;
