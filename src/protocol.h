@@ -7,9 +7,7 @@ extern "C" {
 
 enum EProtoCode
 {
-    Proto_Success = 0,
-
-    Proto_Unknown,
+    Proto_Unknown = 1,
     Proto_DataErr,
     Proto_Again,
     Proto_NoSpace,

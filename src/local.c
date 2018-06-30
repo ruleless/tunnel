@@ -26,6 +26,9 @@
 #define WarnLog  3
 #define ErrLog   4
 
+#define TUN_TIMEOUT   60
+#define LOCAL_TIMEOUT 60
+
 #define ENV_LOCAL   "LOCAL"
 #define ENV_TUN     "TUNNEL"
 #define ENV_LOCALFD "localfd"
@@ -148,6 +151,8 @@ struct tunnel_s
 static global_t s_global;
 
 static void signal_cb(evutil_socket_t fd, short event, void *arg);
+
+static int decode_buffer(local_t *l, client_t *c);
 
 static client_t *new_client(addr_info_t *addr);
 static void free_client(client_t *c);
@@ -380,7 +385,7 @@ static local_t *new_local(client_t *c, int fd)
     l->fd = fd;
     l->c = c;
 
-    l->timeout.tv_sec = 3;
+    l->timeout.tv_sec = LOCAL_TIMEOUT;
     l->timeout.tv_usec = 0;
     event_assign(&l->ev_read, s_global.evbase, fd, EV_READ|EV_PERSIST, local_recv_cb, l);
     event_assign(&l->ev_write, s_global.evbase, fd, EV_WRITE|EV_PERSIST, local_send_cb, l);
@@ -523,6 +528,7 @@ static void local_send_cb(evutil_socket_t fd, short event, void *arg)
 {
     local_t *l = (local_t *)arg;
     tunnel_t *tun = l->tun;
+    client_t *c = l->c;
     int n, len;
 
     assert(event != EV_TIMEOUT && "local_send_cb: event != EV_TIMEOUT");
@@ -555,6 +561,25 @@ again:
     {
         l->sendptr += n;
         goto end;
+    }
+
+    /* has data left to decode */
+    if (l->recvptr > l->encbuf)
+    {
+        if ((n = decode_buffer(l, c)) <= 0)
+        {
+            if (n != -Proto_Again)
+            {
+                free_tunnel(tun);
+                free_local(l);
+                goto end;
+            }
+        }
+        else
+        {
+            l->sendptr = l->buf;
+            goto again;
+        }
     }
 
     event_del(&l->ev_write);
@@ -592,7 +617,7 @@ static tunnel_t *new_tunnel(local_t *l)
 
     tun->l = l;
     tun->connected = FALSE;
-    tun->timeout.tv_sec = 3;
+    tun->timeout.tv_sec = TUN_TIMEOUT;
     tun->timeout.tv_usec = 0;
 
     event_assign(&tun->ev_read, s_global.evbase, tun->fd, EV_READ|EV_PERSIST, tunnel_recv_cb, tun);
@@ -652,13 +677,39 @@ static void free_tunnel(tunnel_t *tun)
     }
 }
 
+static int decode_buffer(local_t *l, client_t *c)
+{
+    int n, offset;
+
+    n = c->decode_handler(l->encbuf, l->recvptr - l->encbuf, l->buf, sizeof(l->buf), &offset);
+    if (n <= 0)
+    {
+        if (-Proto_Again == n)
+        {
+            return -Proto_Again;
+        }
+
+        LOG(WarnLog, "decode data failed, reason:%s", proto_strerror(n));
+        return n;
+    }
+
+    assert(offset <= l->recvptr - l->encbuf && "offset <= l->recvptr - l->encbuf");
+    if (offset < l->recvptr - l->encbuf)
+    {
+        memmove(l->encbuf, l->encbuf + offset, l->recvptr - l->encbuf - offset);
+    }
+    l->recvptr -= offset;
+    l->len = n;
+
+    return l->len;
+}
+
 static void tunnel_recv_cb(evutil_socket_t fd, short event, void *arg)
 {
     tunnel_t *tun = (tunnel_t *)arg;
     local_t *l = tun->l;
     client_t *c = l->c;
-    int n, r, len;
-    int offset = 0;
+    int n, len;
 
     set_logenv(l);
 
@@ -702,25 +753,17 @@ again_1:
 
     /* decode */
     l->recvptr += n;
-    r = c->decode_handler(l->encbuf, l->recvptr - l->encbuf, l->buf, sizeof(l->buf), &offset);
-    if (r <= 0)
+decode:
+    if ((n = decode_buffer(l, c)) <= 0)
     {
-        if (Proto_Again == r)
-            goto end;
+        if (n != -Proto_Again)
+        {
+            free_tunnel(tun);
+            free_local(l);
+        }
 
-        LOG(WarnLog, "decode data failed, reason:%s", proto_strerror(r));
-        free_tunnel(tun);
-        free_local(l);
         goto end;
     }
-
-    l->len = r;
-    assert(offset <= l->recvptr - l->encbuf && "offset <= l->recvptr - l->encbuf");
-    if (offset < l->recvptr - l->encbuf)
-    {
-        memmove(l->encbuf, l->encbuf + offset, l->recvptr - l->encbuf - offset);
-    }
-    l->recvptr -= offset;
 
     /* translate data to client */
 again_2:
@@ -738,6 +781,8 @@ again_2:
             event_del(&tun->ev_read);
             event_add(&l->ev_write, NULL);
 
+            LOG(InfoLog, "l->recvptr - l->encbuf=%d len=%d", (int)(l->recvptr - l->encbuf), (int)l->len);
+
             l->sendptr = l->buf;
             goto end;
         }
@@ -753,11 +798,16 @@ again_2:
         event_del(&tun->ev_read);
         event_add(&l->ev_write, NULL);
 
+        LOG(InfoLog, "l->recvptr - l->encbuf=%d len=%d", (int)(l->recvptr - l->encbuf), (int)l->len);
         l->sendptr = l->buf + n;
         goto end;
     }
 
     l->len = 0;
+    if (l->recvptr > l->encbuf)
+    {
+        goto decode;
+    }
 end:
     clear_thread_env();
 }

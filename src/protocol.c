@@ -17,10 +17,15 @@ struct header_s
 
 const char *proto_strerror(int code)
 {
-#define RETURN_ERR(r) if ((r == code) || (r == -code)) { return #r; }
+#define RETURN_ERR(r)                           \
+    do {                                        \
+        if ((r == code) || (r == -code)) {      \
+            return #r;                          \
+        }                                       \
+    } while (0)
 
-    RETURN_ERR(Proto_Success);
     RETURN_ERR(Proto_Unknown);
+    RETURN_ERR(Proto_DataErr);
     RETURN_ERR(Proto_Again);
     RETURN_ERR(Proto_NoSpace);
 

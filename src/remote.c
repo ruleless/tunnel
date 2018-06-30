@@ -26,6 +26,9 @@
 #define WarnLog  3
 #define ErrLog   4
 
+#define TUN_TIMEOUT    60
+#define REMOTE_TIMEOUT 60
+
 #define ENV_TUN       "TUNNEL"
 #define ENV_REMOTE    "REMOTE"
 #define ENV_TUNFD     "tunfd"
@@ -380,7 +383,7 @@ static tunnel_t *new_tunnel(server_t *s, int fd)
     tun->fd = fd;
     tun->s = s;
 
-    tun->timeout.tv_sec = 3;
+    tun->timeout.tv_sec = TUN_TIMEOUT;
     tun->timeout.tv_usec = 0;
     event_assign(&tun->ev_read, s_global.evbase, fd, EV_READ|EV_PERSIST, tunnel_recv_cb, tun);
     event_assign(&tun->ev_write, s_global.evbase, fd, EV_WRITE|EV_PERSIST, tunnel_send_cb, tun);
@@ -418,13 +421,39 @@ static void free_tunnel(tunnel_t *tun)
     }
 }
 
+static int decode_buffer(remote_t *r, server_t *s)
+{
+    int n, offset;
+
+    n = s->decode_handler(r->encbuf, r->recvptr - r->encbuf, r->buf, sizeof(r->buf), &offset);
+    if (n <= 0)
+    {
+        if (-Proto_Again == n)
+        {
+            return -Proto_Again;
+        }
+
+        LOG(WarnLog, "decode data failed, reason:%s", proto_strerror(n));
+        return n;
+    }
+
+    assert(offset <= r->recvptr - r->encbuf && "offset <= r->recvptr - r->encbuf");
+    if (offset < r->recvptr - r->encbuf)
+    {
+        memmove(r->encbuf, r->encbuf + offset, r->recvptr - r->encbuf - offset);
+    }
+    r->recvptr -= offset;
+    r->len = n;
+
+    return r->len;
+}
+
 static void tunnel_recv_cb(evutil_socket_t fd, short event, void *arg)
 {
     tunnel_t *tun = (tunnel_t *)arg;
     remote_t *r = tun->r;
     server_t *s = tun->s;
     int n, len;
-    int offset;
 
     assert(r && "tunnel_recv_cb: remote != NULL");
     assert(r->connected && "tunnel_recv_cb: remote is connected");
@@ -471,25 +500,17 @@ again_1:
 
     /* decode */
     r->recvptr += n;
-    n = s->decode_handler(r->encbuf, r->recvptr - r->encbuf, r->buf, sizeof(r->buf), &offset);
-    if (n <= 0)
+decode:
+    if ((n = decode_buffer(r, s)) <= 0)
     {
-        if (Proto_Again == n)
-            goto end;
+        if (n != -Proto_Again)
+        {
+            free_remote(r);
+            free_tunnel(tun);
+        }
 
-        LOG(WarnLog, "decode data failed, reason:%s", proto_strerror(n));
-        free_remote(r);
-        free_tunnel(tun);
         goto end;
     }
-
-    r->len = n;
-    assert(offset <= r->recvptr - r->encbuf && "offset <= r->recvptr - r->encbuf");
-    if (offset < r->recvptr - r->encbuf)
-    {
-        memmove(r->encbuf, r->encbuf + offset, r->recvptr - r->encbuf - offset);
-    }
-    r->recvptr -= offset;
 
     /* translate data to remote */
 again_2:
@@ -527,6 +548,10 @@ again_2:
     }
 
     r->len = 0;
+    if (r->recvptr > r->encbuf)
+    {
+        goto decode;
+    }
 end:
     clear_thread_env();
 }
@@ -604,7 +629,7 @@ static remote_t *new_remote(tunnel_t *tun)
 
     r->tun = tun;
     r->connected = FALSE;
-    r->timeout.tv_sec = 3;
+    r->timeout.tv_sec = REMOTE_TIMEOUT;
     r->timeout.tv_usec = 0;
 
     event_assign(&r->ev_read, s_global.evbase, r->fd, EV_READ|EV_PERSIST, remote_recv_cb, r);
@@ -798,6 +823,25 @@ static void remote_send_cb(evutil_socket_t fd, short event, void *arg)
         {
             r->sendptr += n;
             goto end;
+        }
+
+        /* has data left to decode */
+        if (r->recvptr > r->encbuf)
+        {
+            if ((n = decode_buffer(r, s)) <= 0)
+            {
+                if (n != -Proto_Again)
+                {
+                    free_remote(r);
+                    free_tunnel(tun);
+                    goto end;
+                }
+            }
+            else
+            {
+                r->sendptr = r->buf;
+                goto again;
+            }
         }
 
         event_del(&r->ev_write);
