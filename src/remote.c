@@ -70,9 +70,6 @@
         }                                                               \
     } while(0)
 
-#define BUF_SIZE  4096
-#define RECV_SIZE 2048
-
 typedef struct global_s global_t;
 typedef struct server_s server_t;
 typedef struct addr_info_s addr_info_t;
@@ -144,6 +141,7 @@ struct remote_s
     char *recvptr;
 
     char buf[RECV_SIZE];
+    char padding[PADDING_SIZE]; /* prevent from overflow when decoding */
     char *sendptr;
     size_t len;
 };
@@ -223,8 +221,8 @@ static server_t *new_server(addr_info_t *addr)
         goto err_1;
     }
     memcpy(&s->addr, addr, sizeof(s->addr));
-    s->encode_handler = fake_encode;
-    s->decode_handler = fake_decode;
+    s->encode_handler = aes_encode;
+    s->decode_handler = aes_decode;
 
     /* create socket */
     fd = socket(AF_INET, SOCK_STREAM, 0);
@@ -973,6 +971,8 @@ int main(int argc, char *argv[])
         fprintf(stderr, "parse address failed, exit\n");
         exit(1);
     }
+
+    aes_proto_init("123456");
 
     s_global.evbase = event_base_new();
     s_global.evdns = evdns_base_new(s_global.evbase, 0);
