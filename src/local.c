@@ -28,6 +28,7 @@
 
 #define TUN_TIMEOUT   60
 #define LOCAL_TIMEOUT 60
+#define NOBODY_UID    99
 
 #define ENV_LOCAL   "LOCAL"
 #define ENV_TUN     "TUNNEL"
@@ -890,7 +891,7 @@ end:
     clear_thread_env();
 }
 
-static addr_info_t *parse_addr(int argc, char *argv[])
+static addr_info_t *parse_arg(int argc, char *argv[])
 {
     int opt = 0;
     int listen_port = 0, peer_port = 0;
@@ -898,7 +899,7 @@ static addr_info_t *parse_addr(int argc, char *argv[])
     const char *ptr = NULL;
     addr_info_t *addr;
 
-    while ((opt = getopt(argc, argv, "l:r:p:")) != -1)
+    while ((opt = getopt(argc, argv, "l:r:p:f:")) != -1)
     {
         switch (opt)
         {
@@ -910,6 +911,11 @@ static addr_info_t *parse_addr(int argc, char *argv[])
             break;
         case 'p':
             peer_port = atoi(optarg);
+            break;
+        case 'f':
+            daemonize(optarg);
+            setgid(NOBODY_UID);
+            setuid(NOBODY_UID);
             break;
         }
     }
@@ -972,7 +978,7 @@ int main(int argc, char *argv[])
     client_t *c;
     int r;
 
-    addr = parse_addr(argc, argv);
+    addr = parse_arg(argc, argv);
     if (!addr)
     {
         fprintf(stderr, "parse address failed, exit\n");
@@ -991,21 +997,20 @@ int main(int argc, char *argv[])
     if (r < 0)
     {
         LOG(ErrLog, "Couldn't configure nameservers");
-        goto err;
+        exit(1);
     }
 
     c = new_client(addr);
     if (!c)
     {
         LOG(ErrLog, "new client failed");
-        goto err;
+        exit(1);
     }
 
     event_base_dispatch(s_global.evbase);
 
     free_client(c);
 
-err:
     evdns_base_free(s_global.evdns, 0);
     event_base_free(s_global.evbase);
 

@@ -1,0 +1,111 @@
+#!/bin/bash
+#
+# Script to run tun-remote in daemon mode at boot time.
+# ScriptAuthor: ruleless
+# Revision 1.0 - 14th Sep 2013
+#====================================================================
+# Run level information:
+# chkconfig: 2345 99 99
+# Description: tunnel service run as client
+# processname: tun-remote
+# Author: ruleless
+# Run "/sbin/chkconfig --add tun-remote" to add the Run levels.
+#====================================================================
+
+#====================================================================
+# Paths and variables and system checks.
+
+# Source function library
+. /etc/rc.d/init.d/functions
+
+# Check that networking is up.
+#
+[ ${NETWORKING} ="yes" ] || exit 0
+
+# Daemon
+NAME=tun-remote
+DAEMON=/usr/local/bin/$NAME
+
+#USER="nobody"
+#GROUP="nobody"
+
+# Take care of pidfile permissions
+#mkdir /var/run/$NAME 2>/dev/null || true
+#chown "$USER:$GROUP" /var/run/$NAME
+
+# Path to the lock file.
+#
+LOCK_FILE=/var/lock/subsys/$NAME
+
+# Path to the pid file.
+#
+PID=/var/run/${NAME}.pid
+
+
+#====================================================================
+
+#====================================================================
+# Run controls:
+
+RETVAL=0
+
+start()
+{
+	if [ -f $LOCK_FILE ]; then
+		echo "$NAME is already running!"
+		exit 0
+	else
+		echo -n $"Starting ${NAME}: "
+		$DAEMON -l 8083 -r 127.0.0.1 -p 8081 -f $PID
+	fi
+
+	RETVAL=$?
+	[ $RETVAL -eq 0 ] && success
+	echo
+	[ $RETVAL -eq 0 ] && touch $LOCK_FILE
+	return $RETVAL
+}
+
+stop()
+{
+	rm -f $LOCK_FILE
+
+	echo -n $"Shutting down ${NAME}: "
+	killproc -p ${PID}
+	RETVAL=$?
+	[ $RETVAL -eq 0 ]
+	echo
+
+	rm -f ${PID}
+	return $RETVAL
+}
+
+# See how we were called.
+case "$1" in
+	start)
+		start
+		;;
+	stop)
+		stop
+		;;
+	restart)
+		stop
+		start
+		;;
+	condrestart)
+		if [ -f $LOCK_FILE ]; then
+			stop
+			start
+			RETVAL=$?
+		fi
+		;;
+	status)
+		status $DAEMON
+		RETVAL=$?
+		;;
+	*)
+		echo $"Usage: $0 {start|stop|restart|condrestart|status}"
+		RETVAL=1
+esac
+
+exit $RETVAL

@@ -47,6 +47,12 @@ void daemonize(const char *path)
 {
     /* Our process ID and Session ID */
     pid_t pid, sid;
+    int nullfd = open("/dev/null", O_RDWR);
+
+    if (nullfd < 0)
+    {
+        exit(EXIT_FAILURE);
+    }
 
     /* Fork off the parent process */
     pid = fork();
@@ -90,6 +96,10 @@ void daemonize(const char *path)
     close(STDIN_FILENO);
     close(STDOUT_FILENO);
     close(STDERR_FILENO);
+    dup2(nullfd, STDIN_FILENO);
+    dup2(nullfd, STDOUT_FILENO);
+    dup2(nullfd, STDERR_FILENO);
+    close(nullfd);
 }
 
 void print_stack_frames(void (*print)(const char *sym))
