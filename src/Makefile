@@ -5,7 +5,7 @@ MAKE=make
 CFLAGS=-rdynamic -g -Wall
 CXXFLAGS=-rdynamic -g -Wall
 
-LDFLAGS=-rdynamic -levent -lpthread -lrt -lstdc++
+LDFLAGS=-rdynamic -levent -lpthread -lcrypto -lrt -lstdc++
 
 RM=-rm -rf
 
