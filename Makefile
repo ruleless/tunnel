@@ -23,7 +23,7 @@ remote-local:
 	-$(RM) $(BIN)/$(TUN_LOCAL)
 
 install-remote:
-	cp src/local $(BIN)/$(TUN_REMOTE)
+	cp src/remote $(BIN)/$(TUN_REMOTE)
 	cp script/$(TUN_REMOTE) /etc/rc.d/init.d/$(TUN_REMOTE) && chmod 0775 /etc/rc.d/init.d/$(TUN_REMOTE)
 	chkconfig --add $(TUN_REMOTE)
 
