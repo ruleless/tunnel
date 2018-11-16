@@ -15,11 +15,13 @@
 int set_nonblock(int fd)
 {
     int s = fcntl(fd, F_GETFL);
-    if (s < 0)
+    if (s < 0) {
         return -1;
+    }
 
-    if (fcntl(fd, F_SETFL, s|O_NONBLOCK) < 0)
+    if (fcntl(fd, F_SETFL, s|O_NONBLOCK) < 0) {
         return -1;
+    }
 
     return 0;
 }
@@ -31,10 +33,8 @@ BOOL valid_port(int port)
 
 BOOL valid_hostname(const char *h)
 {
-    while (*h)
-    {
-        if (!isalnum(*h) && *h != '-' && *h != '.')
-        {
+    while (*h) {
+        if (!isalnum(*h) && *h != '-' && *h != '.') {
             return FALSE;
         }
         h++;
@@ -49,25 +49,21 @@ void daemonize(const char *path)
     pid_t pid, sid;
     int nullfd = open("/dev/null", O_RDWR);
 
-    if (nullfd < 0)
-    {
+    if (nullfd < 0) {
         exit(EXIT_FAILURE);
     }
 
     /* Fork off the parent process */
     pid = fork();
-    if (pid < 0)
-    {
+    if (pid < 0) {
         exit(EXIT_FAILURE);
     }
 
     /* If we got a good PID, then
      * we can exit the parent process. */
-    if (pid > 0)
-    {
+    if (pid > 0) {
         FILE *file = fopen(path, "w");
-        if (file == NULL)
-        {
+        if (file == NULL) {
             exit(EXIT_FAILURE);
         }
 
@@ -81,14 +77,12 @@ void daemonize(const char *path)
 
     /* Create a new SID for the child process */
     sid = setsid();
-    if (sid < 0)
-    {
+    if (sid < 0) {
         exit(EXIT_FAILURE);
     }
 
     /* Change the current working directory */
-    if ((chdir("/")) < 0)
-    {
+    if ((chdir("/")) < 0) {
         exit(EXIT_FAILURE);
     }
 
@@ -112,14 +106,14 @@ void print_stack_frames(void (*print)(const char *sym))
 
     nptrs = backtrace(buffer, SIZE);
     strings = backtrace_symbols(buffer, nptrs);
-    if (strings == NULL)
-    {
+    if (strings == NULL) {
         perror("backtrace_symbols");
         exit(EXIT_FAILURE);
     }
 
-    for (j = 0; j < nptrs; j++)
+    for (j = 0; j < nptrs; j++) {
         print(strings[j]);
+    }
 
     free(strings);
 
@@ -137,29 +131,33 @@ int aes_encrypt(const unsigned char *plaintext,
     int ciphertext_len;
 
     /* Create and initialise the context */
-    if (!(ctx = EVP_CIPHER_CTX_new()))
+    if (!(ctx = EVP_CIPHER_CTX_new())) {
         return -1;
+    }
 
     /* Initialise the encryption operation. IMPORTANT - ensure you use a key
      * and IV size appropriate for your cipher
      * In this example we are using 256 bit AES (i.e. a 256 bit key). The
      * IV size for *most* modes is the same as the block size. For AES this
      * is 128 bits */
-    if (1 != EVP_EncryptInit_ex(ctx, EVP_aes_256_cbc(), NULL, key, iv))
+    if (1 != EVP_EncryptInit_ex(ctx, EVP_aes_256_cbc(), NULL, key, iv)) {
         return -1;
+    }
 
     /* Provide the message to be encrypted, and obtain the encrypted output.
      * EVP_EncryptUpdate can be called multiple times if necessary
      */
-    if (1 != EVP_EncryptUpdate(ctx, ciphertext, &len, plaintext, plaintext_len))
+    if (1 != EVP_EncryptUpdate(ctx, ciphertext, &len, plaintext, plaintext_len)) {
         return -1;
+    }
     ciphertext_len = len;
 
     /* Finalise the encryption. Further ciphertext bytes may be written at
      * this stage.
      */
-    if (1 != EVP_EncryptFinal_ex(ctx, ciphertext + len, &len))
+    if (1 != EVP_EncryptFinal_ex(ctx, ciphertext + len, &len)) {
         return -1;
+    }
     ciphertext_len += len;
 
     /* Clean up */
@@ -179,29 +177,33 @@ int aes_decrypt(const unsigned char *ciphertext,
     int plaintext_len;
 
     /* Create and initialise the context */
-    if (!(ctx = EVP_CIPHER_CTX_new()))
+    if (!(ctx = EVP_CIPHER_CTX_new())) {
         return -1;
+    }
 
     /* Initialise the decryption operation. IMPORTANT - ensure you use a key
      * and IV size appropriate for your cipher
      * In this example we are using 256 bit AES (i.e. a 256 bit key). The
      * IV size for *most* modes is the same as the block size. For AES this
      * is 128 bits */
-    if (1 != EVP_DecryptInit_ex(ctx, EVP_aes_256_cbc(), NULL, key, iv))
+    if (1 != EVP_DecryptInit_ex(ctx, EVP_aes_256_cbc(), NULL, key, iv)) {
         return -1;
+    }
 
     /* Provide the message to be decrypted, and obtain the plaintext output.
      * EVP_DecryptUpdate can be called multiple times if necessary
      */
-    if (1 != EVP_DecryptUpdate(ctx, plaintext, &len, ciphertext, ciphertext_len))
+    if (1 != EVP_DecryptUpdate(ctx, plaintext, &len, ciphertext, ciphertext_len)) {
         return -1;
+    }
     plaintext_len = len;
 
     /* Finalise the decryption. Further plaintext bytes may be written at
      * this stage.
      */
-    if (1 != EVP_DecryptFinal_ex(ctx, plaintext + len, &len))
+    if (1 != EVP_DecryptFinal_ex(ctx, plaintext + len, &len)) {
         return -1;
+    }
     plaintext_len += len;
 
     /* Clean up */

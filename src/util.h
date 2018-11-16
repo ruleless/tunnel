@@ -25,8 +25,7 @@ extern "C" {
 #endif
 
 typedef struct hostname_s hostname_t;
-struct hostname_s
-{
+struct hostname_s {
     char hostname[HOSTNAME_SIZE];
     int port;
 };

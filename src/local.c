@@ -80,14 +80,12 @@ typedef struct tunnel_s tunnel_t;
 typedef int (*encode_handler_pt)(const char *inbuf, size_t inlen, char *outbuf, size_t outlen);
 typedef int (*decode_handler_pt)(const char *inbuf, size_t inlen, char *outbuf, size_t outlen, int *offset);
 
-struct global_s
-{
+struct global_s {
     struct event_base *evbase;
     struct evdns_base *evdns;
 };
 
-struct addr_info_s
-{
+struct addr_info_s {
     hostname_t listen_addr;
     hostname_t peer_addr;
 
@@ -95,8 +93,7 @@ struct addr_info_s
     struct sockaddr_in peer_inaddr;
 };
 
-struct client_s
-{
+struct client_s {
     int fd;
 
     struct event ev_accept;
@@ -107,8 +104,7 @@ struct client_s
     decode_handler_pt decode_handler;
 };
 
-struct local_s
-{
+struct local_s {
     int fd;
 
     client_t *c;
@@ -129,8 +125,7 @@ struct local_s
     size_t len;
 };
 
-struct tunnel_s
-{
+struct tunnel_s {
     int fd;
 
     local_t *l;
@@ -177,8 +172,7 @@ static void get_logenv(char *env, size_t len)
     SNPRINTF(ENV_TUN);
     SNPRINTF(ENV_LOCALFD);
     SNPRINTF(ENV_TUNFD);
-    if (ptr > env + 1)
-    {
+    if (ptr > env + 1) {
         *env = '<';
         *(ptr - 1) = '>';
     }
@@ -192,10 +186,11 @@ static void set_logenv(const local_t *l)
     snprintf(str_tun, sizeof(str_tun), "%p", l->tun);
     snprintf(localfd, sizeof(localfd), "%d", l->fd);
 
-    if (l->tun)
+    if (l->tun) {
         snprintf(tunfd, sizeof(tunfd), "%d", l->tun->fd);
-    else
+    } else {
         snprintf(tunfd, sizeof(tunfd), "-1");
+    }
 
     set_thread_env(ENV_LOCAL, str_local);
     set_thread_env(ENV_TUN, str_tun);
@@ -218,8 +213,7 @@ static client_t *new_client(addr_info_t *addr)
     int opt;
 
     c = (client_t *)calloc(sizeof(client_t), 1);
-    if (!c)
-    {
+    if (!c) {
         LOG(ErrLog, "new client failed, no enough memory");
         goto err_1;
     }
@@ -229,13 +223,11 @@ static client_t *new_client(addr_info_t *addr)
 
     /* create socket */
     fd = socket(AF_INET, SOCK_STREAM, 0);
-    if (fd < 0)
-    {
+    if (fd < 0) {
         LOG(WarnLog, "create client failed, reason:%s", strerror(errno));
         goto err_1;
     }
-    if (set_nonblock(fd) < 0)
-    {
+    if (set_nonblock(fd) < 0) {
         LOG(WarnLog, "create client failed, reason:%s", strerror(errno));
         goto err_2;
     }
@@ -246,25 +238,23 @@ static client_t *new_client(addr_info_t *addr)
     /* bind address */
     c->addr.listen_inaddr.sin_family =  AF_INET;
     c->addr.listen_inaddr.sin_port = htons(c->addr.listen_addr.port);
-    if (*c->addr.listen_addr.hostname)
-    {
+    if (*c->addr.listen_addr.hostname) {
         if (inet_pton(AF_INET, c->addr.listen_addr.hostname, &c->addr.listen_inaddr.sin_addr) < 0)
         {
             LOG(ErrLog, "create client failed, invalid listen address:%s", strerror(errno));
             goto err_2;
         }
-    }
-    else
-    {
+    } else {
         c->addr.listen_inaddr.sin_addr.s_addr = htonl(INADDR_ANY);
     }
+
     if (bind(fd, (const struct sockaddr *)&c->addr.listen_inaddr, sizeof(c->addr.listen_inaddr)) < 0)
     {
         LOG(ErrLog, "create client failed, bind failed, reason:%s", strerror(errno));
         goto err_2;
     }
-    if (listen(fd, 5) < 0)
-    {
+
+    if (listen(fd, 5) < 0) {
         LOG(ErrLog, "create client failed, listen failed, reason:%s", strerror(errno));
         goto err_2;
     }
@@ -283,11 +273,13 @@ static client_t *new_client(addr_info_t *addr)
     return c;
 
 err_2:
-    if (fd >= 0)
+    if (fd >= 0) {
         close(fd);
+    }
 err_1:
-    if (c)
+    if (c) {
         free(c);
+    }
     return NULL;
 }
 
@@ -302,17 +294,14 @@ static void resolv_cb(int err, struct evutil_addrinfo *ai, void *arg)
     int i;
     client_t *c = (client_t *)arg;
 
-    if (err)
-    {
+    if (err) {
         goto err_1;
     }
 
-    for (i = 0; ai; ai = ai->ai_next, ++i)
-    {
+    for (i = 0; ai; ai = ai->ai_next, ++i) {
         char buf[128];
 
-        if (ai->ai_family == AF_INET)
-        {
+        if (ai->ai_family == AF_INET) {
             struct sockaddr_in *sin = (struct sockaddr_in *)ai->ai_addr;
 
             evutil_inet_ntop(AF_INET, &sin->sin_addr, buf, sizeof(buf));
@@ -341,18 +330,15 @@ static void accept_cb(evutil_socket_t fd, short event, void *arg)
     int clifd = accept(c->fd, NULL, NULL);
     local_t *l = NULL;
 
-    if (clifd < 0)
-    {
+    if (clifd < 0) {
         LOG(WarnLog, "accept client failed, reason:%s", strerror(errno));
         goto end;
     }
-    if (set_nonblock(clifd) < 0)
-    {
+    if (set_nonblock(clifd) < 0) {
         goto err_1;
     }
 
-    if (!(l = new_local(c, clifd)))
-    {
+    if (!(l = new_local(c, clifd))) {
         LOG(WarnLog, "accpet client failed, create local error");
         goto err_1;
     }
@@ -362,8 +348,9 @@ static void accept_cb(evutil_socket_t fd, short event, void *arg)
     return;
 
 err_1:
-    if (clifd >= 0)
+    if (clifd >= 0) {
         close(clifd);
+    }
 
 end:
     clear_thread_env();
@@ -375,8 +362,7 @@ static local_t *new_local(client_t *c, int fd)
     tunnel_t *tun = NULL;
 
     l = calloc(sizeof(local_t), 1);
-    if (!l)
-    {
+    if (!l) {
         LOG(WarnLog, "new local failed, no enough memory");
         return NULL;
     }
@@ -392,8 +378,7 @@ static local_t *new_local(client_t *c, int fd)
     set_logenv(l);
 
     tun = new_tunnel(l);
-    if (!tun)
-    {
+    if (!tun) {
         LOG(WarnLog, "create tunnel failed");
         goto err_1;
     }
@@ -402,16 +387,16 @@ static local_t *new_local(client_t *c, int fd)
     return l;
 
 err_1:
-    if (l)
+    if (l) {
         free(l);
+    }
 
     return NULL;
 }
 
 static void free_local(local_t *l)
 {
-    if (l)
-    {
+    if (l) {
         LOG(DebugLog, "free local");
 
         event_del(&l->ev_read);
@@ -436,8 +421,7 @@ static void local_recv_cb(evutil_socket_t fd, short event, void *arg)
 
     set_logenv(l);
 
-    if (EV_TIMEOUT == event)
-    {
+    if (EV_TIMEOUT == event) {
         LOG(DebugLog, "connection with client timeout");
         free_tunnel(tun);
         free_local(l);
@@ -447,14 +431,10 @@ static void local_recv_cb(evutil_socket_t fd, short event, void *arg)
     /* recv from client */
 again_1:
     n = recv(l->fd, buf, sizeof(buf), 0);
-    if (n < 0)
-    {
-        if (EINTR == errno)
-        {
+    if (n < 0) {
+        if (EINTR == errno) {
             goto again_1;
-        }
-        else if (errno != EWOULDBLOCK && errno != EAGAIN)
-        {
+        } else if (errno != EWOULDBLOCK && errno != EAGAIN) {
             LOG(WarnLog, "read from client failed, %s", strerror(errno));
             free_tunnel(tun);
             free_local(l);
@@ -463,8 +443,8 @@ again_1:
 
         goto end;
     }
-    if (n == 0)
-    {
+
+    if (n == 0) {
         LOG(DebugLog, "connection with client closed");
         free_tunnel(tun);
         free_local(l);
@@ -474,8 +454,7 @@ again_1:
     /* encode the data */
     assert((!tun->sendptr || tun->sendptr == tun->encbuf) && "local_recv_cb: has data to send");
     r = c->encode_handler(buf, n, tun->encbuf, sizeof(tun->encbuf));
-    if (r <= 0)
-    {
+    if (r <= 0) {
         LOG(ErrLog, "encode error, reason:%s", proto_strerror(r));
         free_tunnel(tun);
         free_local(l);
@@ -487,14 +466,10 @@ again_1:
 again_2:
     len = tun->len;
     n = send(tun->fd, tun->encbuf, len, 0);
-    if (n < 0)
-    {
-        if (EINTR == errno)
-        {
+    if (n < 0) {
+        if (EINTR == errno) {
             goto again_2;
-        }
-        else if (EAGAIN == errno || EWOULDBLOCK == errno)
-        {
+        } else if (EAGAIN == errno || EWOULDBLOCK == errno) {
             /* send buffer is full */
             event_del(&l->ev_read);
             event_add(&tun->ev_write, NULL);
@@ -509,8 +484,7 @@ again_2:
         goto end;
     }
 
-    if (n != len)
-    {
+    if (n != len) {
         event_del(&l->ev_read);
         event_add(&tun->ev_write, NULL);
 
@@ -539,14 +513,10 @@ static void local_send_cb(evutil_socket_t fd, short event, void *arg)
 again:
     len = l->buf + l->len - l->sendptr;
     n = send(l->fd, l->sendptr, len, 0);
-    if (n < 0)
-    {
-        if (EINTR == errno)
-        {
+    if (n < 0) {
+        if (EINTR == errno) {
             goto again;
-        }
-        else if (EAGAIN == errno || EWOULDBLOCK == errno)
-        {
+        } else if (EAGAIN == errno || EWOULDBLOCK == errno) {
             goto end;
         }
 
@@ -556,26 +526,20 @@ again:
         goto end;
     }
 
-    if (n != len)
-    {
+    if (n != len) {
         l->sendptr += n;
         goto end;
     }
 
     /* has data left to decode */
-    if (l->recvptr > l->encbuf)
-    {
-        if ((n = decode_buffer(l, c)) <= 0)
-        {
-            if (n != -Proto_Again)
-            {
+    if (l->recvptr > l->encbuf) {
+        if ((n = decode_buffer(l, c)) <= 0) {
+            if (n != -Proto_Again) {
                 free_tunnel(tun);
                 free_local(l);
                 goto end;
             }
-        }
-        else
-        {
+        } else {
             l->sendptr = l->buf;
             goto again;
         }
@@ -596,20 +560,17 @@ static tunnel_t *new_tunnel(local_t *l)
     tunnel_t *tun = NULL;
 
     tun = calloc(sizeof(tunnel_t), 1);
-    if (!tun)
-    {
+    if (!tun) {
         LOG(WarnLog, "new tunnel failed, no enough memory");
         return NULL;
     }
 
     tun->fd = socket(AF_INET, SOCK_STREAM, 0);
-    if (l->fd < 0)
-    {
+    if (l->fd < 0) {
         LOG(WarnLog, "create tunnel socket faild, reason:%s", strerror(errno));
         goto err_1;
     }
-    if (set_nonblock(tun->fd) < 0)
-    {
+    if (set_nonblock(tun->fd) < 0) {
         LOG(WarnLog, "create tunnel socket failed, set nonblock failed");
         goto err_2;
     }
@@ -628,22 +589,15 @@ static tunnel_t *new_tunnel(local_t *l)
 again:
     if (connect(tun->fd, (struct sockaddr *)&c->addr.peer_inaddr, sizeof(c->addr.peer_inaddr)) < 0)
     {
-        if (EINTR == errno)
-        {
+        if (EINTR == errno) {
             goto again;
-        }
-        else if (EINPROGRESS == errno)
-        {
+        } else if (EINPROGRESS == errno) {
             event_add(&tun->ev_write, NULL);
-        }
-        else
-        {
+        } else {
             LOG(ErrLog, "create tunnel error, connect failed, reason:%s", strerror(errno));
             goto err_2;
         }
-    }
-    else
-    {
+    } else {
         event_add(&l->ev_read, &l->timeout);
         event_add(&tun->ev_read, &tun->timeout);
         tun->connected = TRUE;
@@ -652,20 +606,21 @@ again:
     return tun;
 
 err_2:
-    if (tun->fd >= 0)
+    if (tun->fd >= 0) {
         close(tun->fd);
+    }
 
 err_1:
-    if (tun)
+    if (tun) {
         free(tun);
+    }
 
     return NULL;
 }
 
 static void free_tunnel(tunnel_t *tun)
 {
-    if (tun)
-    {
+    if (tun) {
         LOG(DebugLog, "free tunnel");
 
         event_del(&tun->ev_read);
@@ -681,10 +636,8 @@ static int decode_buffer(local_t *l, client_t *c)
     int n, offset;
 
     n = c->decode_handler(l->encbuf, l->recvptr - l->encbuf, l->buf, sizeof(l->buf), &offset);
-    if (n <= 0)
-    {
-        if (-Proto_Again == n)
-        {
+    if (n <= 0) {
+        if (-Proto_Again == n) {
             return -Proto_Again;
         }
 
@@ -693,8 +646,7 @@ static int decode_buffer(local_t *l, client_t *c)
     }
 
     assert(offset <= l->recvptr - l->encbuf && "offset <= l->recvptr - l->encbuf");
-    if (offset < l->recvptr - l->encbuf)
-    {
+    if (offset < l->recvptr - l->encbuf) {
         memmove(l->encbuf, l->encbuf + offset, l->recvptr - l->encbuf - offset);
     }
     l->recvptr -= offset;
@@ -712,8 +664,7 @@ static void tunnel_recv_cb(evutil_socket_t fd, short event, void *arg)
 
     set_logenv(l);
 
-    if (EV_TIMEOUT == event)
-    {
+    if (EV_TIMEOUT == event) {
         LOG(DebugLog, "connection with server timeout");
         free_tunnel(tun);
         free_local(l);
@@ -723,17 +674,14 @@ static void tunnel_recv_cb(evutil_socket_t fd, short event, void *arg)
     /* recv data from server */
 again_1:
     assert((!l->sendptr || l->sendptr == l->buf) && "tunnel_recv_cb: has data to send to client");
-    if (!l->recvptr)
+    if (!l->recvptr) {
         l->recvptr = l->encbuf;
+    }
     n = recv(tun->fd, l->recvptr, l->encbuf + sizeof(l->encbuf) - l->recvptr, 0);
-    if (n < 0)
-    {
-        if (EINTR == errno)
-        {
+    if (n < 0) {
+        if (EINTR == errno) {
             goto again_1;
-        }
-        else if (errno != EWOULDBLOCK && errno != EAGAIN)
-        {
+        } else if (errno != EWOULDBLOCK && errno != EAGAIN) {
             LOG(InfoLog, "read from server error, %s", strerror(errno));
             free_tunnel(tun);
             free_local(l);
@@ -742,8 +690,7 @@ again_1:
 
         goto end;
     }
-    if (n == 0)
-    {
+    if (n == 0) {
         LOG(DebugLog, "connection with server closed");
         free_tunnel(tun);
         free_local(l);
@@ -753,10 +700,8 @@ again_1:
     /* decode */
     l->recvptr += n;
 decode:
-    if ((n = decode_buffer(l, c)) <= 0)
-    {
-        if (n != -Proto_Again)
-        {
+    if ((n = decode_buffer(l, c)) <= 0) {
+        if (n != -Proto_Again) {
             free_tunnel(tun);
             free_local(l);
         }
@@ -768,14 +713,10 @@ decode:
 again_2:
     len = l->len;
     n = send(l->fd, l->buf, len, 0);
-    if (n < 0)
-    {
-        if (EINTR == errno)
-        {
+    if (n < 0) {
+        if (EINTR == errno) {
             goto again_2;
-        }
-        else if (EAGAIN == errno || EWOULDBLOCK == errno)
-        {
+        } else if (EAGAIN == errno || EWOULDBLOCK == errno) {
             /* send buffer is full */
             event_del(&tun->ev_read);
             event_add(&l->ev_write, NULL);
@@ -792,8 +733,7 @@ again_2:
         goto end;
     }
 
-    if (n != len)
-    {
+    if (n != len) {
         event_del(&tun->ev_read);
         event_add(&l->ev_write, NULL);
 
@@ -803,8 +743,7 @@ again_2:
     }
 
     l->len = 0;
-    if (l->recvptr > l->encbuf)
-    {
+    if (l->recvptr > l->encbuf) {
         goto decode;
     }
 end:
@@ -819,22 +758,17 @@ static void tunnel_send_cb(evutil_socket_t fd, short event, void *arg)
 
     set_logenv(l);
 
-    if (tun->connected)
-    {
+    if (tun->connected) {
         int len, n;
 
         assert(tun->sendptr && "tunnel_send_cb: tun->sendptr != NULL");
   again:
         len = tun->encbuf + tun->len - tun->sendptr;
         n = send(tun->fd, tun->sendptr, len, 0);
-        if (n < 0)
-        {
-            if (EINTR == errno)
-            {
+        if (n < 0) {
+            if (EINTR == errno) {
                 goto again;
-            }
-            else if (EAGAIN == errno || EWOULDBLOCK == errno)
-            {
+            } else if (EAGAIN == errno || EWOULDBLOCK == errno) {
                 goto end;
             }
 
@@ -844,8 +778,7 @@ static void tunnel_send_cb(evutil_socket_t fd, short event, void *arg)
             goto end;
         }
 
-        if (n != len)
-        {
+        if (n != len) {
             tun->sendptr += n;
             goto end;
         }
@@ -854,14 +787,11 @@ static void tunnel_send_cb(evutil_socket_t fd, short event, void *arg)
         event_add(&l->ev_read, &l->timeout);
         tun->sendptr = NULL;
         tun->len = 0;
-    }
-    else
-    {
+    } else {
         int err = 0;
         socklen_t errlen = sizeof(int);
 
-        if (EV_TIMEOUT == event)
-        {
+        if (EV_TIMEOUT == event) {
             LOG(InfoLog, "connect to %s:%d timeout, shutdown",
                 c->addr.peer_addr.hostname, c->addr.peer_addr.port);
             free_tunnel(tun);
@@ -869,8 +799,7 @@ static void tunnel_send_cb(evutil_socket_t fd, short event, void *arg)
             goto end;
         }
 
-        if (getsockopt(fd, SOL_SOCKET, SO_ERROR, &err, &errlen) < 0 || err != 0)
-        {
+        if (getsockopt(fd, SOL_SOCKET, SO_ERROR, &err, &errlen) < 0 || err != 0) {
             LOG(InfoLog, "connect to %s:%d error, reason:%s",
                 c->addr.peer_addr.hostname, c->addr.peer_addr.port, strerror(err));
             free_tunnel(tun);
@@ -899,10 +828,8 @@ static addr_info_t *parse_arg(int argc, char *argv[])
     const char *ptr = NULL;
     addr_info_t *addr;
 
-    while ((opt = getopt(argc, argv, "l:r:p:f:")) != -1)
-    {
-        switch (opt)
-        {
+    while ((opt = getopt(argc, argv, "l:r:p:f:")) != -1) {
+        switch (opt) {
         case 'l':
             listen_addr = optarg;
             break;
@@ -924,39 +851,31 @@ static addr_info_t *parse_arg(int argc, char *argv[])
     assert(addr && "calloc addr failed, no enough memory");
 
     /* parse listen address */
-    if (!listen_addr)
-    {
+    if (!listen_addr) {
         fprintf(stderr, "no listen address, use '-l' to assign it(like 0.0.0.0:8081 or 8081)\n");
         goto err;
     }
-    if ((ptr = strchr(listen_addr, ':')))
-    {
+    if ((ptr = strchr(listen_addr, ':'))) {
         listen_port = atoi(ptr + 1);
-        if (ptr > listen_addr)
-        {
+        if (ptr > listen_addr) {
             strncpy(addr->listen_addr.hostname, listen_addr,
                     MIN(ptr - listen_addr, sizeof(addr->listen_addr.hostname) - 1));
         }
-    }
-    else
-    {
+    } else {
         listen_port = atoi(listen_addr);
     }
-    if (!valid_port(listen_port))
-    {
+    if (!valid_port(listen_port)) {
         fprintf(stderr, "invalid listen port\n");
         goto err;
     }
     addr->listen_addr.port = listen_port;
 
     /* parse peer address */
-    if (!peer_addr)
-    {
+    if (!peer_addr) {
         fprintf(stderr, "no peer address, use '-r' to assign it\n");
         goto err;
     }
-    if (!valid_port(peer_port))
-    {
+    if (!valid_port(peer_port)) {
         fprintf(stderr, "invalid peer port, use '-p' to assign it\n");
         goto err;
     }
@@ -966,8 +885,9 @@ static addr_info_t *parse_arg(int argc, char *argv[])
     return addr;
 
   err:
-    if (addr)
+    if (addr) {
         free(addr);
+    }
     return NULL;
 }
 
@@ -979,8 +899,7 @@ int main(int argc, char *argv[])
     int r;
 
     addr = parse_arg(argc, argv);
-    if (!addr)
-    {
+    if (!addr) {
         fprintf(stderr, "parse address failed, exit\n");
         exit(1);
     }
@@ -994,15 +913,13 @@ int main(int argc, char *argv[])
     evsignal_add(&evsig, NULL);
 
     r = evdns_base_resolv_conf_parse(s_global.evdns, DNS_OPTION_NAMESERVERS, "/etc/resolv.conf");
-    if (r < 0)
-    {
+    if (r < 0) {
         LOG(ErrLog, "Couldn't configure nameservers");
         exit(1);
     }
 
     c = new_client(addr);
-    if (!c)
-    {
+    if (!c) {
         LOG(ErrLog, "new client failed");
         exit(1);
     }

@@ -19,8 +19,7 @@
 extern "C" {
 #endif
 
-enum EProtoCode
-{
+enum EProtoCode {
     Proto_Unknown = 1,
     Proto_DataErr,
     Proto_Again,

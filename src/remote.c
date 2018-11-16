@@ -80,14 +80,12 @@ typedef struct remote_s remote_t;
 typedef int (*encode_handler_pt)(const char *inbuf, size_t inlen, char *outbuf, size_t outlen);
 typedef int (*decode_handler_pt)(const char *inbuf, size_t inlen, char *outbuf, size_t outlen, int *offset);
 
-struct global_s
-{
+struct global_s {
     struct event_base *evbase;
     struct evdns_base *evdns;
 };
 
-struct addr_info_s
-{
+struct addr_info_s {
     hostname_t listen_addr;
     hostname_t peer_addr;
 
@@ -95,8 +93,7 @@ struct addr_info_s
     struct sockaddr_in peer_inaddr;
 };
 
-struct server_s
-{
+struct server_s {
     int fd;
 
     struct event ev_accept;
@@ -107,8 +104,7 @@ struct server_s
     decode_handler_pt decode_handler;
 };
 
-struct tunnel_s
-{
+struct tunnel_s {
     int fd;
 
     server_t *s;
@@ -125,8 +121,7 @@ struct tunnel_s
     size_t len;
 };
 
-struct remote_s
-{
+struct remote_s {
     int fd;
 
     tunnel_t *tun;
@@ -175,8 +170,7 @@ static void get_logenv(char *env, size_t len)
     SNPRINTF(ENV_REMOTE);
     SNPRINTF(ENV_TUNFD);
     SNPRINTF(ENV_REMOTEFD);
-    if (ptr > env + 1)
-    {
+    if (ptr > env + 1) {
         *env = '<';
         *(ptr - 1) = '>';
     }
@@ -190,10 +184,11 @@ static void set_logenv(const tunnel_t *tun)
     snprintf(str_remote, sizeof(str_remote), "%p", tun->r);
     snprintf(tunfd, sizeof(tunfd), "%d", tun->fd);
 
-    if (tun->r)
+    if (tun->r) {
         snprintf(remotefd, sizeof(remotefd), "%d", tun->r->fd);
-    else
+    } else {
         snprintf(remotefd, sizeof(remotefd), "-1");
+    }
 
     set_thread_env(ENV_TUN, str_tun);
     set_thread_env(ENV_REMOTE, str_remote);
@@ -216,8 +211,7 @@ static server_t *new_server(addr_info_t *addr)
     int opt;
 
     s = (server_t *)calloc(sizeof(server_t), 1);
-    if (!s)
-    {
+    if (!s) {
         LOG(ErrLog, "new server failed, no enough memory");
         goto err_1;
     }
@@ -227,13 +221,11 @@ static server_t *new_server(addr_info_t *addr)
 
     /* create socket */
     fd = socket(AF_INET, SOCK_STREAM, 0);
-    if (fd < 0)
-    {
+    if (fd < 0) {
         LOG(WarnLog, "create server failed, reason:%s", strerror(errno));
         goto err_1;
     }
-    if (set_nonblock(fd) < 0)
-    {
+    if (set_nonblock(fd) < 0) {
         LOG(WarnLog, "create server failed, reason:%s", strerror(errno));
         goto err_2;
     }
@@ -244,25 +236,19 @@ static server_t *new_server(addr_info_t *addr)
     /* bind address */
     s->addr.listen_inaddr.sin_family = AF_INET;
     s->addr.listen_inaddr.sin_port = htons(s->addr.listen_addr.port);
-    if (*s->addr.listen_addr.hostname)
-    {
-        if (inet_pton(AF_INET, s->addr.listen_addr.hostname, &s->addr.listen_inaddr.sin_addr) < 0)
-        {
+    if (*s->addr.listen_addr.hostname) {
+        if (inet_pton(AF_INET, s->addr.listen_addr.hostname, &s->addr.listen_inaddr.sin_addr) < 0) {
             LOG(ErrLog, "create server failed, invalid listen address:%s", strerror(errno));
             goto err_2;
         }
-    }
-    else
-    {
+    } else {
         s->addr.listen_inaddr.sin_addr.s_addr = htonl(INADDR_ANY);
     }
-    if (bind(fd, (const struct sockaddr *)&s->addr.listen_inaddr, sizeof(s->addr.listen_inaddr)) < 0)
-    {
+    if (bind(fd, (const struct sockaddr *)&s->addr.listen_inaddr, sizeof(s->addr.listen_inaddr)) < 0) {
         LOG(ErrLog, "create server failed, bind failed, reason:%s", strerror(errno));
         goto err_2;
     }
-    if (listen(fd, 5) < 0)
-    {
+    if (listen(fd, 5) < 0) {
         LOG(ErrLog, "create server failed, listen failed, reason:%s", strerror(errno));
         goto err_2;
     }
@@ -281,11 +267,13 @@ static server_t *new_server(addr_info_t *addr)
     return s;
 
 err_2:
-    if (fd >= 0)
+    if (fd >= 0) {
         close(fd);
+    }
 err_1:
-    if (s)
+    if (s) {
         free(s);
+    }
     return NULL;
 }
 
@@ -300,17 +288,14 @@ static void resolv_cb(int err, struct evutil_addrinfo *ai, void *arg)
     int i;
     server_t *s = (server_t *)arg;
 
-    if (err)
-    {
+    if (err) {
         goto err_1;
     }
 
-    for (i = 0; ai; ai = ai->ai_next, ++i)
-    {
+    for (i = 0; ai; ai = ai->ai_next, ++i) {
         char buf[128];
 
-        if (ai->ai_family == AF_INET)
-        {
+        if (ai->ai_family == AF_INET) {
             struct sockaddr_in *sin = (struct sockaddr_in *)ai->ai_addr;
 
             evutil_inet_ntop(AF_INET, &sin->sin_addr, buf, sizeof(buf));
@@ -339,18 +324,15 @@ static void accept_cb(evutil_socket_t fd, short event, void *arg)
     int tunfd = accept(s->fd, NULL, NULL);
     tunnel_t *tun = NULL;
 
-    if (tunfd < 0)
-    {
+    if (tunfd < 0) {
         LOG(WarnLog, "accept tunnel failed, reason:%s", strerror(errno));
         goto end;
     }
-    if (set_nonblock(tunfd) < 0)
-    {
+    if (set_nonblock(tunfd) < 0) {
         goto err_1;
     }
 
-    if (!(tun = new_tunnel(s, tunfd)))
-    {
+    if (!(tun = new_tunnel(s, tunfd))) {
         LOG(WarnLog, "accpet tunnel failed, create tunnel error");
         goto err_1;
     }
@@ -360,8 +342,9 @@ static void accept_cb(evutil_socket_t fd, short event, void *arg)
     return;
 
 err_1:
-    if (tunfd >= 0)
+    if (tunfd >= 0) {
         close(tunfd);
+    }
 
 end:
     clear_thread_env();
@@ -373,8 +356,7 @@ static tunnel_t *new_tunnel(server_t *s, int fd)
     remote_t *r = NULL;
 
     tun = calloc(sizeof(*tun), 1);
-    if (!tun)
-    {
+    if (!tun) {
         LOG(WarnLog, "new tunnel failed, no enough memory");
         return NULL;
     }
@@ -390,8 +372,7 @@ static tunnel_t *new_tunnel(server_t *s, int fd)
     set_logenv(tun);
 
     r = new_remote(tun);
-    if (!r)
-    {
+    if (!r) {
         LOG(WarnLog, "create remote failed");
         goto err_1;
     }
@@ -400,16 +381,16 @@ static tunnel_t *new_tunnel(server_t *s, int fd)
     return tun;
 
 err_1:
-    if (tun)
+    if (tun) {
         free(tun);
+    }
 
     return NULL;
 }
 
 static void free_tunnel(tunnel_t *tun)
 {
-    if (tun)
-    {
+    if (tun) {
         LOG(DebugLog, "free tunnel");
 
         event_del(&tun->ev_read);
@@ -425,10 +406,8 @@ static int decode_buffer(remote_t *r, server_t *s)
     int n, offset;
 
     n = s->decode_handler(r->encbuf, r->recvptr - r->encbuf, r->buf, sizeof(r->buf), &offset);
-    if (n <= 0)
-    {
-        if (-Proto_Again == n)
-        {
+    if (n <= 0) {
+        if (-Proto_Again == n) {
             return -Proto_Again;
         }
 
@@ -437,8 +416,7 @@ static int decode_buffer(remote_t *r, server_t *s)
     }
 
     assert(offset <= r->recvptr - r->encbuf && "offset <= r->recvptr - r->encbuf");
-    if (offset < r->recvptr - r->encbuf)
-    {
+    if (offset < r->recvptr - r->encbuf) {
         memmove(r->encbuf, r->encbuf + offset, r->recvptr - r->encbuf - offset);
     }
     r->recvptr -= offset;
@@ -459,8 +437,7 @@ static void tunnel_recv_cb(evutil_socket_t fd, short event, void *arg)
 
     set_logenv(tun);
 
-    if (EV_TIMEOUT == event)
-    {
+    if (EV_TIMEOUT == event) {
         LOG(DebugLog, "connection with tunnel timeout");
         free_remote(r);
         free_tunnel(tun);
@@ -470,17 +447,14 @@ static void tunnel_recv_cb(evutil_socket_t fd, short event, void *arg)
     /* recv from tunnel */
 again_1:
     assert((!r->sendptr || r->sendptr == r->buf) && "tunnel_recv_cb: has data to send to remote");
-    if (!r->recvptr)
+    if (!r->recvptr) {
         r->recvptr = r->encbuf;
+    }
     n = recv(tun->fd, r->recvptr, r->encbuf + sizeof(r->encbuf) - r->recvptr, 0);
-    if (n < 0)
-    {
-        if (EINTR == errno)
-        {
+    if (n < 0) {
+        if (EINTR == errno) {
             goto again_1;
-        }
-        else if (errno != EWOULDBLOCK && errno != EAGAIN)
-        {
+        } else if (errno != EWOULDBLOCK && errno != EAGAIN) {
             LOG(InfoLog, "read from tunnel error, %s", strerror(errno));
             free_remote(r);
             free_tunnel(tun);
@@ -489,8 +463,7 @@ again_1:
 
         goto end;
     }
-    if (n == 0)
-    {
+    if (n == 0) {
         LOG(DebugLog, "connection with tunnel closed");
         free_remote(r);
         free_tunnel(tun);
@@ -500,10 +473,8 @@ again_1:
     /* decode */
     r->recvptr += n;
 decode:
-    if ((n = decode_buffer(r, s)) <= 0)
-    {
-        if (n != -Proto_Again)
-        {
+    if ((n = decode_buffer(r, s)) <= 0) {
+        if (n != -Proto_Again) {
             free_remote(r);
             free_tunnel(tun);
         }
@@ -515,14 +486,10 @@ decode:
 again_2:
     len = r->len;
     n = send(r->fd, r->buf, len, 0);
-    if (n < 0)
-    {
-        if (EINTR == errno)
-        {
+    if (n < 0) {
+        if (EINTR == errno) {
             goto again_2;
-        }
-        else if (EAGAIN == errno || EWOULDBLOCK == errno)
-        {
+        } else if (EAGAIN == errno || EWOULDBLOCK == errno) {
             /* send buffer is full */
             event_del(&tun->ev_read);
             event_add(&r->ev_write, NULL);
@@ -537,8 +504,7 @@ again_2:
         goto end;
     }
 
-    if (n != len)
-    {
+    if (n != len) {
         event_del(&tun->ev_read);
         event_add(&r->ev_write, NULL);
 
@@ -547,8 +513,7 @@ again_2:
     }
 
     r->len = 0;
-    if (r->recvptr > r->encbuf)
-    {
+    if (r->recvptr > r->encbuf) {
         goto decode;
     }
 end:
@@ -570,14 +535,10 @@ static void tunnel_send_cb(evutil_socket_t fd, short event, void *arg)
 again:
     len = tun->encbuf + tun->len - tun->sendptr;
     n = send(tun->fd, tun->sendptr, len, 0);
-    if (n < 0)
-    {
-        if (EINTR == errno)
-        {
+    if (n < 0) {
+        if (EINTR == errno) {
             goto again;
-        }
-        else if (EAGAIN == errno || EWOULDBLOCK == errno)
-        {
+        } else if (EAGAIN == errno || EWOULDBLOCK == errno) {
             goto end;
         }
 
@@ -587,8 +548,7 @@ again:
         goto end;
     }
 
-    if (n != len)
-    {
+    if (n != len) {
         tun->sendptr += n;
         goto end;
     }
@@ -608,20 +568,17 @@ static remote_t *new_remote(tunnel_t *tun)
     remote_t *r = NULL;
 
     r = calloc(sizeof(*r), 1);
-    if (!r)
-    {
+    if (!r) {
         LOG(WarnLog, "new remote failed, no enough memory");
         return NULL;
     }
 
     r->fd = socket(AF_INET, SOCK_STREAM, 0);
-    if (r->fd < 0)
-    {
+    if (r->fd < 0) {
         LOG(WarnLog, "create remote socket faild, reason:%s", strerror(errno));
         goto err_1;
     }
-    if (set_nonblock(r->fd) < 0)
-    {
+    if (set_nonblock(r->fd) < 0) {
         LOG(WarnLog, "create remote socket failed, set nonblock failed");
         goto err_2;
     }
@@ -638,24 +595,16 @@ static remote_t *new_remote(tunnel_t *tun)
 
     /* connect remote server */
 again:
-    if (connect(r->fd, (struct sockaddr *)&s->addr.peer_inaddr, sizeof(s->addr.peer_inaddr)) < 0)
-    {
-        if (EINTR == errno)
-        {
+    if (connect(r->fd, (struct sockaddr *)&s->addr.peer_inaddr, sizeof(s->addr.peer_inaddr)) < 0) {
+        if (EINTR == errno) {
             goto again;
-        }
-        else if (EINPROGRESS == errno)
-        {
+        } else if (EINPROGRESS == errno) {
             event_add(&r->ev_write, NULL);
-        }
-        else
-        {
+        } else {
             LOG(ErrLog, "create remote error, connect failed, reason:%s", strerror(errno));
             goto err_2;
         }
-    }
-    else
-    {
+    } else {
         event_add(&tun->ev_read, &tun->timeout);
         event_add(&r->ev_read, &r->timeout);
         r->connected = TRUE;
@@ -664,20 +613,21 @@ again:
     return r;
 
 err_2:
-    if (r->fd >= 0)
+    if (r->fd >= 0) {
         close(r->fd);
+    }
 
 err_1:
-    if (r)
+    if (r) {
         free(r);
+    }
 
     return NULL;
 }
 
 static void free_remote(remote_t *r)
 {
-    if (r)
-    {
+    if (r) {
         LOG(DebugLog, "free remote");
 
         event_del(&r->ev_read);
@@ -696,10 +646,11 @@ static void remote_recv_cb(evutil_socket_t fd, short event, void *arg)
     char buf[RECV_SIZE];
     int n, len;
 
+    assert(tun != NULL && "remote_recv_cb: r->tun != NULL");
+
     set_logenv(tun);
 
-    if (EV_TIMEOUT == event)
-    {
+    if (EV_TIMEOUT == event) {
         LOG(DebugLog, "connection with remote timeout");
         free_remote(r);
         free_tunnel(tun);
@@ -709,14 +660,10 @@ static void remote_recv_cb(evutil_socket_t fd, short event, void *arg)
     /* recv data from remote */
 again_1:
     n = recv(r->fd, buf, sizeof(buf), 0);
-    if (n < 0)
-    {
-        if (EINTR == errno)
-        {
+    if (n < 0) {
+        if (EINTR == errno) {
             goto again_1;
-        }
-        else if (errno != EWOULDBLOCK && errno != EAGAIN)
-        {
+        } else if (errno != EWOULDBLOCK && errno != EAGAIN) {
             LOG(WarnLog, "read from remote failed, %s", strerror(errno));
             free_remote(r);
             free_tunnel(tun);
@@ -725,8 +672,7 @@ again_1:
 
         goto end;
     }
-    if (n == 0)
-    {
+    if (n == 0) {
         LOG(DebugLog, "connection with remote closed");
         free_remote(r);
         free_tunnel(tun);
@@ -736,8 +682,7 @@ again_1:
     /* encode the data */
     assert((!tun->sendptr || tun->sendptr == tun->encbuf) && "remote_recv_cb: has data to send");
     n = s->encode_handler(buf, n, tun->encbuf, sizeof(tun->encbuf));
-    if (n <= 0)
-    {
+    if (n <= 0) {
         LOG(ErrLog, "encode error, reason:%s", proto_strerror(n));
         free_remote(r);
         free_tunnel(tun);
@@ -749,14 +694,10 @@ again_1:
 again_2:
     len = tun->len;
     n = send(tun->fd, tun->encbuf, len, 0);
-    if (n < 0)
-    {
-        if (EINTR == errno)
-        {
+    if (n < 0) {
+        if (EINTR == errno) {
             goto again_2;
-        }
-        else if (EAGAIN == errno || EWOULDBLOCK == errno)
-        {
+        } else if (EAGAIN == errno || EWOULDBLOCK == errno) {
             /* send buffer is full */
             event_del(&r->ev_read);
             event_add(&tun->ev_write, NULL);
@@ -771,8 +712,7 @@ again_2:
         goto end;
     }
 
-    if (n != len)
-    {
+    if (n != len) {
         event_del(&r->ev_read);
         event_add(&tun->ev_write, NULL);
 
@@ -793,22 +733,17 @@ static void remote_send_cb(evutil_socket_t fd, short event, void *arg)
 
     set_logenv(tun);
 
-    if (r->connected)
-    {
+    if (r->connected) {
         int len, n;
 
         assert(r->sendptr && "remote_send_cb: r->sendptr != NULL");
   again:
         len = r->buf + r->len - r->sendptr;
         n = send(r->fd, r->sendptr, len, 0);
-        if (n < 0)
-        {
-            if (EINTR == errno)
-            {
+        if (n < 0) {
+            if (EINTR == errno) {
                 goto again;
-            }
-            else if (EAGAIN == errno || EWOULDBLOCK == errno)
-            {
+            } else if (EAGAIN == errno || EWOULDBLOCK == errno) {
                 goto end;
             }
 
@@ -818,26 +753,20 @@ static void remote_send_cb(evutil_socket_t fd, short event, void *arg)
             goto end;
         }
 
-        if (n != len)
-        {
+        if (n != len) {
             r->sendptr += n;
             goto end;
         }
 
         /* has data left to decode */
-        if (r->recvptr > r->encbuf)
-        {
-            if ((n = decode_buffer(r, s)) <= 0)
-            {
-                if (n != -Proto_Again)
-                {
+        if (r->recvptr > r->encbuf) {
+            if ((n = decode_buffer(r, s)) <= 0) {
+                if (n != -Proto_Again) {
                     free_remote(r);
                     free_tunnel(tun);
                     goto end;
                 }
-            }
-            else
-            {
+            } else {
                 r->sendptr = r->buf;
                 goto again;
             }
@@ -847,14 +776,11 @@ static void remote_send_cb(evutil_socket_t fd, short event, void *arg)
         event_add(&tun->ev_read, &tun->timeout);
         r->sendptr = NULL;
         r->len = 0;
-    }
-    else
-    {
+    } else {
         int err = 0;
         socklen_t errlen = sizeof(int);
 
-        if (EV_TIMEOUT == event)
-        {
+        if (EV_TIMEOUT == event) {
             LOG(InfoLog, "connect to %s:%d timeout, shutdown",
                 s->addr.peer_addr.hostname, s->addr.peer_addr.port);
             free_remote(r);
@@ -862,8 +788,7 @@ static void remote_send_cb(evutil_socket_t fd, short event, void *arg)
             goto end;
         }
 
-        if (getsockopt(fd, SOL_SOCKET, SO_ERROR, &err, &errlen) < 0 || err != 0)
-        {
+        if (getsockopt(fd, SOL_SOCKET, SO_ERROR, &err, &errlen) < 0 || err != 0) {
             LOG(InfoLog, "connect to %s:%d error, reason:%s",
                 s->addr.peer_addr.hostname, s->addr.peer_addr.port, strerror(err));
             free_remote(r);
@@ -892,10 +817,8 @@ static addr_info_t *parse_arg(int argc, char *argv[])
     const char *ptr = NULL;
     addr_info_t *addr;
 
-    while ((opt = getopt(argc, argv, "l:r:p:f:")) != -1)
-    {
-        switch (opt)
-        {
+    while ((opt = getopt(argc, argv, "l:r:p:f:")) != -1) {
+        switch (opt) {
         case 'l':
             listen_addr = optarg;
             break;
@@ -917,39 +840,31 @@ static addr_info_t *parse_arg(int argc, char *argv[])
     assert(addr && "calloc addr failed, no enough memory");
 
     /* parse listen address */
-    if (!listen_addr)
-    {
+    if (!listen_addr) {
         fprintf(stderr, "no listen address, use '-l' to assign it(like 0.0.0.0:8081 or 8081)\n");
         goto err;
     }
-    if ((ptr = strchr(listen_addr, ':')))
-    {
+    if ((ptr = strchr(listen_addr, ':'))) {
         listen_port = atoi(ptr + 1);
-        if (ptr > listen_addr)
-        {
+        if (ptr > listen_addr) {
             strncpy(addr->listen_addr.hostname, listen_addr,
                     MIN(ptr - listen_addr, sizeof(addr->listen_addr.hostname) - 1));
         }
-    }
-    else
-    {
+    } else {
         listen_port = atoi(listen_addr);
     }
-    if (!valid_port(listen_port))
-    {
+    if (!valid_port(listen_port)) {
         fprintf(stderr, "invalid listen port\n");
         goto err;
     }
     addr->listen_addr.port = listen_port;
 
     /* parse peer address */
-    if (!peer_addr)
-    {
+    if (!peer_addr) {
         fprintf(stderr, "no peer address, use '-r' to assign it\n");
         goto err;
     }
-    if (!valid_port(peer_port))
-    {
+    if (!valid_port(peer_port)) {
         fprintf(stderr, "invalid peer port, use '-p' to assign it\n");
         goto err;
     }
@@ -959,8 +874,9 @@ static addr_info_t *parse_arg(int argc, char *argv[])
     return addr;
 
   err:
-    if (addr)
+    if (addr) {
         free(addr);
+    }
     return NULL;
 }
 
@@ -972,8 +888,7 @@ int main(int argc, char *argv[])
     int r;
 
     addr = parse_arg(argc, argv);
-    if (!addr)
-    {
+    if (!addr) {
         fprintf(stderr, "parse address failed, exit\n");
         exit(1);
     }
@@ -987,15 +902,13 @@ int main(int argc, char *argv[])
     evsignal_add(&evsig, NULL);
 
     r = evdns_base_resolv_conf_parse(s_global.evdns, DNS_OPTION_NAMESERVERS, "/etc/resolv.conf");
-    if (r < 0)
-    {
+    if (r < 0) {
         LOG(ErrLog, "Couldn't configure nameservers");
         exit(1);
     }
 
     s = new_server(addr);
-    if (!s)
-    {
+    if (!s) {
         LOG(ErrLog, "new server failed");
         exit(1);
     }

@@ -14,14 +14,12 @@
 
 typedef struct header_s header_t;
 
-struct header_s
-{
+struct header_s {
     int len;
     unsigned magic;
 };
 
-struct
-{
+struct {
     unsigned char iv[AES_IV_BYTES];
     unsigned char key[AES_KEY_BYTES];
 } s_aes_ctx;
@@ -49,8 +47,7 @@ BOOL aes_proto_init(const char *key)
 {
     int i = 0;
 
-    for (i = 0; i < sizeof(s_aes_ctx.iv); i++)
-    {
+    for (i = 0; i < sizeof(s_aes_ctx.iv); i++) {
         s_aes_ctx.iv[i] = ((314259 ^ i) * (i + 13) % 256);
     }
     snprintf((char *)s_aes_ctx.key, sizeof(s_aes_ctx.key), "%s", key);
@@ -80,17 +77,14 @@ int fake_decode(const char *inbuf, size_t inlen, char *outbuf, size_t outlen, in
     assert(inbuf && outbuf && "inbuf && outbuf");
     assert(offset && "offset != NULL");
 
-    if (inlen < sizeof(*h))
-    {
+    if (inlen < sizeof(*h)) {
         return -Proto_Again;
     }
     h = (header_t *)inbuf;
-    if (h->magic != FAKE_MAGIC)
-    {
+    if (h->magic != FAKE_MAGIC) {
         return -Proto_DataErr;
     }
-    if (inlen < h->len + sizeof(*h))
-    {
+    if (inlen < h->len + sizeof(*h)) {
         return -Proto_Again;
     }
 
@@ -109,8 +103,7 @@ int aes_encode(const char *inbuf, size_t inlen, char *outbuf, size_t outlen)
 
     cipherlen = aes_encrypt((const unsigned char *)inbuf, inlen, s_aes_ctx.key, s_aes_ctx.iv,
                             (unsigned char *)outbuf + sizeof(h));
-    if (cipherlen < 0)
-    {
+    if (cipherlen < 0) {
         return -Proto_DataErr;
     }
     assert(outlen >= cipherlen + sizeof(h) && "outlen >= cipherlen + sizeof(h)");
@@ -130,24 +123,20 @@ int aes_decode(const char *inbuf, size_t inlen, char *outbuf, size_t outlen, int
     assert(offset && "offset != NULL");
     assert(outlen + PADDING_SIZE >= inlen && "outlen + PADDING_SIZE >= inlen");
 
-    if (inlen < sizeof(*h))
-    {
+    if (inlen < sizeof(*h)) {
         return -Proto_Again;
     }
     h = (header_t *)inbuf;
-    if (h->magic != AES_MAGIC)
-    {
+    if (h->magic != AES_MAGIC) {
         return -Proto_DataErr;
     }
-    if (inlen < h->len + sizeof(*h))
-    {
+    if (inlen < h->len + sizeof(*h)) {
         return -Proto_Again;
     }
 
     plainlen = aes_decrypt((const unsigned char *)inbuf + sizeof(*h), h->len, s_aes_ctx.key, s_aes_ctx.iv,
                            (unsigned char *)outbuf);
-    if (plainlen < 0)
-    {
+    if (plainlen < 0) {
         return -Proto_DataErr;
     }
     assert(outlen >= plainlen && "outlen >= plainlen");
